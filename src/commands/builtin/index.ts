@@ -1,0 +1,10 @@
+export { helpCommand } from './help.js';
+export { clearCommand } from './clear.js';
+export { exitCommand } from './exit.js';
+export { modelCommand } from './model.js';
+export { compactCommand } from './compact.js';
+export { permissionsCommand } from './permissions.js';
+export { mcpCommand } from './mcp.js';
+export { resumeCommand } from './resume.js';
+export { bugCommand } from './bug.js';
+export { agentsCommand } from './agents.js';
