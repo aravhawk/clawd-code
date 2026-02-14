@@ -60,7 +60,7 @@ export class ToolExecutor {
       }
 
       // 2. Validate input against schema
-      const validationResult = validateInput(input, tool.inputSchema);
+      const validationResult = validateInput(input, tool.inputSchema as any);
       if (!validationResult.valid) {
         return {
           success: false,
@@ -71,7 +71,7 @@ export class ToolExecutor {
       }
 
       // 3. Sanitize input
-      const sanitizedInput = sanitizeInput(input, tool.inputSchema);
+      const sanitizedInput = sanitizeInput(input, tool.inputSchema as any);
 
       // 4. Security checks
       const securityResult = checkSecurity(toolName, sanitizedInput, this.config.cwd);

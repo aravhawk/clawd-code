@@ -16,6 +16,10 @@ export class PermissionManager {
   }
 
   needsApproval(toolUse: ToolUseBlock): boolean {
+    if (!toolUse || !toolUse.name) {
+      return true; // Default to requiring approval for invalid tool use
+    }
+
     const { name, input } = toolUse;
 
     // Check session allowlist first
@@ -71,13 +75,23 @@ export class PermissionManager {
     name: string,
     input: unknown,
   ): boolean {
+    if (!rule || !rule.tool) {
+      return false;
+    }
+
     // Parse rule pattern: "Bash(git:*)" -> { tool: "Bash", pattern: "git:*" }
     const { tool, pattern } = this.parseToolPattern(rule.tool);
 
     if (!minimatch(name, tool)) return false;
 
     if (pattern && name === 'Bash') {
-      const command = (input as { command: string }).command;
+      if (!input || typeof input !== 'object') {
+        return false;
+      }
+      const command = (input as { command?: string }).command;
+      if (!command || typeof command !== 'string') {
+        return false;
+      }
       return minimatch(command, pattern);
     }
 
@@ -95,8 +109,13 @@ export class PermissionManager {
   }
 
   private getToolSignature(name: string, input: unknown): string {
-    if (name === 'Bash') {
-      return `Bash:${(input as { command: string }).command}`;
+    if (!name) {
+      return 'unknown';
+    }
+
+    if (name === 'Bash' && input && typeof input === 'object') {
+      const command = (input as { command?: string }).command;
+      return `Bash:${command || 'empty'}`;
     }
     return name;
   }

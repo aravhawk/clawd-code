@@ -44,47 +44,97 @@ export class BashTool extends BaseTool {
   async execute(input: unknown): Promise<ToolResult> {
     this.validateInput(input);
     const { command, timeout = 120000, workdir } = input as BashInput;
+    
+    if (!command || command.trim().length === 0) {
+      return {
+        success: false,
+        content: 'Command cannot be empty',
+      };
+    }
+
     const cwd = workdir || this.context.cwd;
 
     log.debug(`Executing command: ${command}`);
 
     return new Promise((resolve) => {
+      let isResolved = false;
+      let timeoutId: NodeJS.Timeout | null = null;
+
       const child = spawn('bash', ['-c', command], {
         cwd,
-        timeout,
         env: { ...process.env },
+        detached: false,
       });
 
       let stdout = '';
       let stderr = '';
 
-      child.stdout.on('data', (data) => {
+      // Set up timeout
+      if (timeout > 0) {
+        timeoutId = setTimeout(() => {
+          if (!isResolved) {
+            log.warn(`Command timed out after ${timeout}ms, killing process`);
+            
+            // Try to kill the process and its children
+            try {
+              if (child.pid) {
+                process.kill(-child.pid, 'SIGKILL');
+              }
+            } catch (killError) {
+              log.error('Failed to kill process:', killError);
+              child.kill('SIGKILL');
+            }
+
+            isResolved = true;
+            resolve({
+              success: false,
+              content: `Command timed out after ${timeout}ms\n\nPartial output:\n${stdout}\n\nPartial stderr:\n${stderr}`,
+              metadata: {
+                exitCode: null,
+                timedOut: true,
+              },
+            });
+          }
+        }, timeout);
+      }
+
+      child.stdout?.on('data', (data) => {
         stdout += data.toString();
       });
 
-      child.stderr.on('data', (data) => {
+      child.stderr?.on('data', (data) => {
         stderr += data.toString();
       });
 
       child.on('close', (code) => {
-        const output = stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
+        if (!isResolved) {
+          if (timeoutId) clearTimeout(timeoutId);
+          isResolved = true;
 
-        resolve({
-          success: code === 0,
-          content: this.truncateOutput(output),
-          metadata: {
-            exitCode: code,
-            truncated: output.length > 51200,
-          },
-        });
+          const output = stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
+
+          resolve({
+            success: code === 0,
+            content: this.truncateOutput(output),
+            metadata: {
+              exitCode: code,
+              truncated: output.length > 51200,
+            },
+          });
+        }
       });
 
       child.on('error', (error) => {
-        log.error('Command failed:', error);
-        resolve({
-          success: false,
-          content: `Command failed: ${error.message}`,
-        });
+        if (!isResolved) {
+          if (timeoutId) clearTimeout(timeoutId);
+          isResolved = true;
+
+          log.error('Command failed:', error);
+          resolve({
+            success: false,
+            content: `Command failed: ${error.message}`,
+          });
+        }
       });
     });
   }

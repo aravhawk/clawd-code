@@ -39,44 +39,75 @@ export class SessionManager {
   }
 
   async create(name?: string): Promise<Session> {
-    const session: Session = {
-      id: uuidv4(),
-      name: name ?? `Session ${new Date().toLocaleString()}`,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      projectPath: process.cwd(),
-    };
+    try {
+      const session: Session = {
+        id: uuidv4(),
+        name: name ?? `Session ${new Date().toLocaleString()}`,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        projectPath: process.cwd(),
+      };
 
-    await this.storage.save(session);
-    this.currentSession = session;
-    this.messages = [];
-    this.tokenUsage = 0;
+      await this.storage.save(session);
+      this.currentSession = session;
+      this.messages = [];
+      this.tokenUsage = 0;
 
-    log.info(`Created session: ${session.id}`);
-    return session;
+      log.info(`Created session: ${session.id}`);
+      return session;
+    } catch (error) {
+      log.error('Failed to create session:', error);
+      throw new Error(`Failed to create session: ${(error as Error).message}`);
+    }
   }
 
   async resume(sessionId: string): Promise<Session | null> {
-    const session = await this.storage.load(sessionId);
-    if (!session) return null;
+    if (!sessionId || sessionId.trim().length === 0) {
+      log.error('Cannot resume session: invalid session ID');
+      return null;
+    }
 
-    this.currentSession = session;
-    // Messages would be loaded from transcript
-    this.messages = [];
-    this.tokenUsage = session.tokenUsage ?? 0;
+    try {
+      const session = await this.storage.load(sessionId);
+      if (!session) {
+        log.warn(`Session not found: ${sessionId}`);
+        return null;
+      }
 
-    log.info(`Resumed session: ${sessionId}`);
-    return session;
+      this.currentSession = session;
+      // Messages would be loaded from transcript
+      this.messages = [];
+      this.tokenUsage = session.tokenUsage ?? 0;
+
+      log.info(`Resumed session: ${sessionId}`);
+      return session;
+    } catch (error) {
+      log.error('Failed to resume session:', error);
+      return null;
+    }
   }
 
   async loadMostRecent(): Promise<Session | null> {
-    const sessions = await this.storage.list(process.cwd());
-    if (sessions.length === 0) return null;
+    try {
+      const sessions = await this.storage.list(process.cwd());
+      if (sessions.length === 0) {
+        log.info('No sessions found');
+        return null;
+      }
 
-    return this.resume(sessions[0].id);
+      return this.resume(sessions[0].id);
+    } catch (error) {
+      log.error('Failed to load most recent session:', error);
+      return null;
+    }
   }
 
   addMessage(message: Message): void {
+    if (!message || !message.role || message.content === undefined) {
+      log.warn('Attempted to add invalid message, skipping');
+      return;
+    }
+
     this.messages.push(message);
     this.tokenUsage += this.estimateTokens(message);
 
@@ -108,8 +139,16 @@ export class SessionManager {
   }
 
   async saveCurrent(): Promise<void> {
-    if (this.currentSession) {
+    if (!this.currentSession) {
+      log.warn('No current session to save');
+      return;
+    }
+
+    try {
       await this.storage.save(this.currentSession);
+    } catch (error) {
+      log.error('Failed to save session:', error);
+      throw new Error(`Failed to save session: ${(error as Error).message}`);
     }
   }
 

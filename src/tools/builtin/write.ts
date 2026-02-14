@@ -43,17 +43,24 @@ export class WriteTool extends BaseTool {
           ? filePath
           : undefined;
 
-    if (!targetPath) {
+    if (!targetPath || targetPath.trim().length === 0) {
       return {
         success: false,
-        content: 'Missing required field: file_path',
+        content: 'Missing or empty required field: file_path',
+      };
+    }
+
+    if (content === undefined || content === null) {
+      return {
+        success: false,
+        content: 'Missing required field: content',
       };
     }
 
     if (typeof content !== 'string') {
       return {
         success: false,
-        content: 'Missing required field: content',
+        content: 'Content must be a string',
       };
     }
 
@@ -68,14 +75,43 @@ export class WriteTool extends BaseTool {
 
     try {
       const dir = path.dirname(targetPath);
-      await fs.mkdir(dir, { recursive: true });
+      
+      // Validate directory path is allowed
+      if (!this.isPathAllowed(dir)) {
+        return {
+          success: false,
+          content: `Directory path not allowed: ${dir}`,
+        };
+      }
+
+      // Create directory if it doesn't exist
+      try {
+        await fs.mkdir(dir, { recursive: true });
+      } catch (mkdirError) {
+        return {
+          success: false,
+          content: `Failed to create directory: ${(mkdirError as Error).message}`,
+        };
+      }
+
+      // Check if file exists to determine if we're creating or overwriting
+      let isNewFile = false;
+      try {
+        await fs.access(targetPath);
+      } catch {
+        isNewFile = true;
+      }
 
       await fs.writeFile(targetPath, content, 'utf-8');
 
       return {
         success: true,
-        content: `Successfully wrote ${targetPath}`,
-        metadata: { filePath: targetPath, bytesWritten: content.length },
+        content: `Successfully ${isNewFile ? 'created' : 'overwrote'} ${targetPath}`,
+        metadata: { 
+          filePath: targetPath, 
+          bytesWritten: content.length,
+          isNewFile,
+        },
       };
     } catch (error) {
       log.error('Failed to write file:', error);
