@@ -73,9 +73,27 @@ export class ConfigLoader {
   private async loadJsonFile(filePath: string): Promise<Partial<ClawdConfig>> {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      const parsed = JSON.parse(content) as Partial<ClawdConfig>;
+      
+      if (!content || content.trim().length === 0) {
+        log.debug('Empty config file:', filePath);
+        return {};
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(content);
+      } catch (parseError) {
+        log.error('Failed to parse JSON config:', filePath, (parseError as Error).message);
+        return {};
+      }
+
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        log.error('Invalid config format in:', filePath);
+        return {};
+      }
+
       log.debug('Loaded config from', filePath);
-      return parsed;
+      return parsed as Partial<ClawdConfig>;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         log.warn('Failed to load config from', filePath, (error as Error).message);
@@ -115,7 +133,13 @@ export class ConfigLoader {
   }
 
   getMaxTokens(): number {
-    return this.config.maxTokens ?? 8192;
+    const maxTokens = this.config.maxTokens ?? 8192;
+    // Validate max tokens is within reasonable bounds
+    if (typeof maxTokens !== 'number' || maxTokens < 1 || maxTokens > 200000) {
+      log.warn(`Invalid maxTokens value: ${maxTokens}, using default 8192`);
+      return 8192;
+    }
+    return maxTokens;
   }
 
   getMCPServers(): Record<string, unknown> {
@@ -133,7 +157,8 @@ export class ConfigLoader {
   }
 
   validate(): void {
-    if (!this.getApiKey()) {
+    const apiKey = this.getApiKey();
+    if (!apiKey || apiKey.trim().length === 0) {
       throw new ClawdError(
         'API key not found. Set CLAWD_API_KEY or ANTHROPIC_API_KEY environment variable.',
         ErrorCode.API_KEY_MISSING
@@ -143,6 +168,15 @@ export class ConfigLoader {
     if (process.env['CLAWD_BASE_URL'] && !process.env['CLAWD_MODEL']) {
       throw new ClawdError(
         'CLAWD_MODEL is required when using CLAWD_BASE_URL. Set CLAWD_MODEL environment variable to specify the model for your custom endpoint.',
+        ErrorCode.CONFIG_MODEL_REQUIRED
+      );
+    }
+
+    // Validate model name format
+    const model = this.getModel();
+    if (!model || model.trim().length === 0) {
+      throw new ClawdError(
+        'Model name cannot be empty',
         ErrorCode.CONFIG_MODEL_REQUIRED
       );
     }

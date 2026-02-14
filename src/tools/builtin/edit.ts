@@ -46,6 +46,27 @@ export class EditTool extends BaseTool {
     this.validateInput(input);
     const { filePath, oldString, newString, replaceAll = false } = input as EditInput;
 
+    if (!filePath || filePath.trim().length === 0) {
+      return {
+        success: false,
+        content: 'File path cannot be empty',
+      };
+    }
+
+    if (oldString === undefined || oldString === null) {
+      return {
+        success: false,
+        content: 'oldString cannot be null or undefined',
+      };
+    }
+
+    if (newString === undefined || newString === null) {
+      return {
+        success: false,
+        content: 'newString cannot be null or undefined',
+      };
+    }
+
     log.debug(`Editing file: ${filePath}`);
 
     if (!this.isPathAllowed(filePath)) {
@@ -56,7 +77,33 @@ export class EditTool extends BaseTool {
     }
 
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      // Check if file exists
+      try {
+        await fs.access(filePath, fs.constants.R_OK | fs.constants.W_OK);
+      } catch (accessError) {
+        return {
+          success: false,
+          content: `Cannot access file for reading and writing: ${filePath}`,
+        };
+      }
+
+      const stats = await fs.stat(filePath);
+      if (!stats.isFile()) {
+        return {
+          success: false,
+          content: `Path is not a file: ${filePath}`,
+        };
+      }
+
+      let content: string;
+      try {
+        content = await fs.readFile(filePath, 'utf-8');
+      } catch (readError) {
+        return {
+          success: false,
+          content: `Failed to read file: ${(readError as Error).message}`,
+        };
+      }
 
       if (!content.includes(oldString)) {
         return {
@@ -79,6 +126,18 @@ export class EditTool extends BaseTool {
         ? content.replaceAll(oldString, newString)
         : content.replace(oldString, newString);
 
+      // Ensure we're not writing the same content (would waste disk I/O)
+      if (newContent === content) {
+        return {
+          success: true,
+          content: `No changes needed for ${filePath} (oldString and newString result in same content)`,
+          metadata: {
+            filePath,
+            noChanges: true,
+          },
+        };
+      }
+
       await fs.writeFile(filePath, newContent, 'utf-8');
 
       return {
@@ -87,6 +146,7 @@ export class EditTool extends BaseTool {
         metadata: {
           filePath,
           bytesWritten: newContent.length,
+          replacements: content.split(oldString).length - 1,
         },
       };
     } catch (error) {

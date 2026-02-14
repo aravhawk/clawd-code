@@ -64,7 +64,34 @@ export class ToolRegistry extends EventEmitter {
   }
 
   async executeToolUse(toolUse: ToolUseBlock): Promise<ToolResult> {
-    return this.execute(toolUse.name, toolUse.input);
+    // Validate tool use block
+    if (!toolUse) {
+      return {
+        success: false,
+        content: 'Tool use block is null or undefined',
+      };
+    }
+
+    if (!toolUse.name || typeof toolUse.name !== 'string') {
+      return {
+        success: false,
+        content: 'Tool use block missing valid name',
+      };
+    }
+
+    if (!toolUse.input || typeof toolUse.input !== 'object') {
+      log.warn(`Tool ${toolUse.name} has invalid input, using empty object`);
+      toolUse.input = {};
+    }
+
+    try {
+      return await this.execute(toolUse.name, toolUse.input);
+    } catch (error) {
+      return {
+        success: false,
+        content: `Failed to execute tool: ${(error as Error).message}`,
+      };
+    }
   }
 
   listTools(): string[] {

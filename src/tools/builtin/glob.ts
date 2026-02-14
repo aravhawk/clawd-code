@@ -37,15 +37,53 @@ export class GlobTool extends BaseTool {
     this.validateInput(input);
     const { pattern, includePatterns = [] } = input as GlobInput;
 
+    if (!pattern || typeof pattern !== 'string' || pattern.trim().length === 0) {
+      return {
+        success: false,
+        content: 'Pattern must be a non-empty string',
+      };
+    }
+
     log.debug(`Globbing files: ${pattern}`);
 
     try {
-      const patterns = [pattern, ...includePatterns];
+      const patterns = [pattern, ...(Array.isArray(includePatterns) ? includePatterns : [])];
+      
+      // Validate all patterns are strings
+      for (const p of patterns) {
+        if (typeof p !== 'string' || p.trim().length === 0) {
+          return {
+            success: false,
+            content: 'All patterns must be non-empty strings',
+          };
+        }
+      }
+
       const files = await globby(patterns, {
         cwd: this.context.cwd,
         absolute: false,
         ignore: ['**/node_modules/**', '**/dist/**', '**/.git/**'],
       });
+
+      if (!files || files.length === 0) {
+        return {
+          success: true,
+          content: 'No files matched the pattern',
+          metadata: { count: 0 },
+        };
+      }
+
+      // Limit results to prevent memory issues
+      const MAX_FILES = 1000;
+      if (files.length > MAX_FILES) {
+        log.warn(`Found ${files.length} files, limiting to ${MAX_FILES}`);
+        const limited = files.slice(0, MAX_FILES);
+        return {
+          success: true,
+          content: limited.join('\n') + `\n\n[Results limited to ${MAX_FILES} of ${files.length} total files]`,
+          metadata: { count: limited.length, total: files.length, limited: true },
+        };
+      }
 
       // Sort by modification time
       const filesWithTime = await Promise.all(
@@ -56,7 +94,8 @@ export class GlobTool extends BaseTool {
               fs.stat(fullPath)
             );
             return { file, mtime: stats.mtimeMs };
-          } catch {
+          } catch (error) {
+            log.debug(`Failed to stat file ${file}:`, error);
             return { file, mtime: 0 };
           }
         })

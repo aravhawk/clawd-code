@@ -11,9 +11,22 @@ export function sanitizeInput(
   input: Record<string, unknown>,
   schema: JSONSchema
 ): Record<string, unknown> {
+  if (!input || typeof input !== 'object') {
+    return {};
+  }
+
+  if (!schema || typeof schema !== 'object') {
+    return input;
+  }
+
   const sanitized: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(input)) {
+    // Skip prototype pollution attempts
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;
+    }
+
     const propSchema = schema.properties?.[key];
 
     if (propSchema) {
