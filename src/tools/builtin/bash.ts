@@ -63,7 +63,7 @@ export class BashTool extends BaseTool {
       const child = spawn('bash', ['-c', command], {
         cwd,
         env: { ...process.env },
-        detached: false,
+        detached: true,
       });
 
       let stdout = '';
