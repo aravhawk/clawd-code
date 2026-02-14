@@ -138,12 +138,9 @@ export class AnthropicProvider {
               // Ignore metadata events
               break;
 
-            case 'error':
-              log.error('Stream error event:', event);
-              throw new Error('Stream error received from API');
-
             default:
-              log.debug('Unknown event type:', event.type);
+              // Handle any unexpected event types
+              log.debug('Unknown event type:', (event as any).type);
           }
         }
 
