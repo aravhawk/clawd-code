@@ -136,7 +136,37 @@ export class ToolExecutor {
   async executeParallel(
     executions: Array<{ toolName: string; input: Record<string, unknown> }>
   ): Promise<ToolExecutionResult[]> {
-    return Promise.all(executions.map(({ toolName, input }) => this.execute(toolName, input)));
+    if (!executions || executions.length === 0) {
+      return [];
+    }
+
+    // Validate all executions before starting
+    const validated = executions.filter((exec) => {
+      if (!exec || !exec.toolName || !exec.input) {
+        return false;
+      }
+      return true;
+    });
+
+    if (validated.length === 0) {
+      return [];
+    }
+
+    // Execute with error handling for each individual execution
+    return Promise.all(
+      validated.map(async ({ toolName, input }) => {
+        try {
+          return await this.execute(toolName, input);
+        } catch (error) {
+          return {
+            success: false,
+            output: '',
+            error: `Parallel execution failed: ${(error as Error).message}`,
+            duration: 0,
+          };
+        }
+      })
+    );
   }
 
   /**
@@ -145,14 +175,39 @@ export class ToolExecutor {
   async executeSequential(
     executions: Array<{ toolName: string; input: Record<string, unknown> }>
   ): Promise<ToolExecutionResult[]> {
+    if (!executions || executions.length === 0) {
+      return [];
+    }
+
     const results: ToolExecutionResult[] = [];
 
-    for (const { toolName, input } of executions) {
-      const result = await this.execute(toolName, input);
-      results.push(result);
+    for (const exec of executions) {
+      if (!exec || !exec.toolName || !exec.input) {
+        results.push({
+          success: false,
+          output: '',
+          error: 'Invalid execution specification',
+          duration: 0,
+        });
+        break;
+      }
 
-      // Stop on first failure
-      if (!result.success) {
+      try {
+        const result = await this.execute(exec.toolName, exec.input);
+        results.push(result);
+
+        // Stop on first failure
+        if (!result.success) {
+          break;
+        }
+      } catch (error) {
+        const errorResult: ToolExecutionResult = {
+          success: false,
+          output: '',
+          error: `Sequential execution failed: ${(error as Error).message}`,
+          duration: 0,
+        };
+        results.push(errorResult);
         break;
       }
     }
