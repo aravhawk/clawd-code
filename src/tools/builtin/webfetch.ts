@@ -71,14 +71,50 @@ HTTP URLs are automatically upgraded to HTTPS. Results may be truncated if conte
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
 
-      const response = await fetch(parsedUrl.href, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'clawd-code/1.0.0 (CLI agent)',
-          Accept: this.getAcceptHeader(format),
-        },
-        redirect: 'follow',
-      });
+      let response: Response;
+      try {
+        response = await fetch(parsedUrl.href, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'clawd-code/1.0.0 (CLI agent)',
+            Accept: this.getAcceptHeader(format),
+          },
+          redirect: 'follow',
+        });
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        
+        // Handle specific network errors
+        if (fetchError.name === 'AbortError') {
+          return {
+            success: false,
+            content: `Request timed out after ${timeout} seconds`,
+          };
+        }
+        
+        if (fetchError.code === 'ENOTFOUND') {
+          return {
+            success: false,
+            content: `DNS lookup failed for ${parsedUrl.hostname}`,
+          };
+        }
+        
+        if (fetchError.code === 'ECONNREFUSED') {
+          return {
+            success: false,
+            content: `Connection refused by ${parsedUrl.hostname}`,
+          };
+        }
+        
+        if (fetchError.code === 'CERT_HAS_EXPIRED' || fetchError.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') {
+          return {
+            success: false,
+            content: `SSL certificate error for ${parsedUrl.hostname}`,
+          };
+        }
+
+        throw fetchError;
+      }
 
       clearTimeout(timeoutId);
 
